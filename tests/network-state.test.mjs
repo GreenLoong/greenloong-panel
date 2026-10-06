@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {networkRequestAlreadyApplied,networkCredentials} from '../lib/deploy.mjs';
+const request={port:25565,firewall:true,ddns:true,ddnsExe:'owned/ddns-go.exe',ddnsConfig:'private/config'};
+test('unchanged successful network settings can be reused while Minecraft is running',()=>assert.equal(networkRequestAlreadyApplied(request,{...request},{ok:true},false),true));
+test('changed credentials or port require applying the new settings',()=>{assert.equal(networkRequestAlreadyApplied(request,request,{ok:true},true),false);assert.equal(networkRequestAlreadyApplied(request,{...request,port:25566},{ok:true},false),false);});
+test('a failed or absent previous administrator step is not counted as applied',()=>{assert.equal(networkRequestAlreadyApplied(request,request,{ok:false},false),false);assert.equal(networkRequestAlreadyApplied(null,request,null,false),false);});
+const saved={dnsconf:[{ipv6:{domains:['mc.example.xyz']},dns:{name:'alidns',id:'saved-id',secret:'saved-secret'}}]};
+test('refresh does not require resubmitting locally saved credentials for the same domain',()=>assert.deepEqual(networkCredentials({},saved,'mc.example.xyz'),{id:'saved-id',secret:'saved-secret'}));
+test('changing the AccessKey ID never combines it with a different saved Secret',()=>assert.throws(()=>networkCredentials({accessId:'different-id'},saved,'mc.example.xyz'),/完整/));
+test('saved credentials are not silently reused for a different domain',()=>assert.throws(()=>networkCredentials({},saved,'other.example.xyz')));

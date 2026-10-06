@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {resolveCorePlan} from '../lib/core-catalog.mjs';
+import {serverManifestFiles,trustedPackDownloads,parallelFiles} from '../lib/pack-files.mjs';
+const pack={mc:'1.20.1',loaders:{forge:'47.4.13'},packType:'client',existingCore:null};
+const forbiddenLookup=()=>{throw Error('Native deployment must not query alternate catalogs');};
+test('Chapter of Yuusha version is deployable with exact original Forge without alternate catalogs',async()=>{const p=await resolveCorePlan(pack,{},forbiddenLookup);assert.equal(p.ready,true);assert.equal(p.kind,'forge');assert.equal(p.core.loaderVersion,'47.4.13');assert.equal(p.selected,undefined);assert.equal(p.source,'official');});
+test('existing server is retained even if a different source is selected',async()=>{const p=await resolveCorePlan({...pack,existingCore:{kind:'forge',argsFile:'libraries/win_args.txt'}},{coreMode:'mohist'},forbiddenLookup);assert.equal(p.source,'existing');assert.equal(p.kind,'forge');});
+test('explicitly unavailable Mohist produces guidance instead of downgrading Forge',async()=>{const p=await resolveCorePlan(pack,{coreMode:'mohist'},async(mc,forge,prefer)=>{assert.equal(forge,'47.4.13');assert.equal(prefer,'mohist');return {candidates:[],errors:['没有匹配构建，请选择原加载器']};});assert.equal(p.ready,false);assert.match(p.reason,/原加载器/);});
+test('at most one catalog candidate is selected',async()=>{const p=await resolveCorePlan(pack,{coreMode:'sponge-or-mohist'},async()=>({candidates:[{kind:'spongeforge',version:'a',reason:'matched'},{kind:'mohist',version:'b'}],errors:[]}));assert.equal(p.kind,'spongeforge');assert.equal(p.selected.version,'a');assert.equal(p.candidates,undefined);});
+test('Fabric and NeoForge use native installers by default',async()=>{for(const [loader,version] of [['fabric','0.16.9'],['neoforge','20.1.0']]){const p=await resolveCorePlan({...pack,loaders:{[loader]:version}},{},forbiddenLookup);assert.equal(p.ready,true);assert.equal(p.kind,loader);}});
+test('invalid source choice is rejected',async()=>assert.equal((await resolveCorePlan(pack,{coreMode:'all'})).ready,false));
+test('PCL-importable Modrinth exports may reference direct ForgeCDN downloads',()=>{const file={path:'mods/example.jar',downloads:['https://mediafilez.forgecdn.net/files/123/example.jar','https://edge.forgecdn.net/files/123/example.jar'],hashes:{sha1:'a'.repeat(40)}};assert.equal(serverManifestFiles({files:[file]},()=>true).length,1);assert.equal(trustedPackDownloads(file).length,2);assert.equal(trustedPackDownloads({...file,downloads:['https://forgecdn.net.evil.example/file']}).length,0);});
+test('client-only manifest entries never enter the server download queue',()=>{assert.deepEqual(serverManifestFiles({files:[{env:{server:'unsupported'},path:'mods/client.jar'}]},()=>true),[]);});
+test('parallel downloads settle in-flight tasks before reporting failure',async()=>{let active=0;await assert.rejects(()=>parallelFiles([0,1,2,3,4],2,async i=>{active++;try{await new Promise(r=>setTimeout(r,10));if(i===0)throw Error('file failed');}finally{active--;}}));assert.equal(active,0);});

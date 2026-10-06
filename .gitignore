@@ -1,0 +1,13 @@
+/data/
+/runtime/*
+!/runtime/README.md
+/*.zip
+*.part
+*.log
+*.tmp
+.env
+.env.*
+*.pem
+*.pfx
+*.key
+node_modules/
